@@ -599,10 +599,21 @@ export function createApp() {
   // Mount API router strictly under /api so Vite and SPA static files are not intercepted
   app.use('/api', apiRouter);
 
+  // Catch-all 404 handler for unmatched /api requests
+  app.use('/api', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `API route not found: ${req.method} ${req.originalUrl || req.url}`,
+    });
+  });
+
   // Global Error Handler for API routes
-  app.use('/api', (err: any, req: any, res: any, next: any) => {
+  app.use((err: any, req: any, res: any, next: any) => {
     console.error('[API Server Error]:', err);
-    res.status(err.status || 500).json({
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err?.status || 500).json({
       success: false,
       error: err?.message || 'Internal Server Error',
     });
