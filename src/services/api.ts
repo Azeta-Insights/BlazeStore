@@ -412,6 +412,34 @@ export const api = {
     return data.users || [];
   },
 
+  async createUser(userData: {
+    name: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    roleType?: AdminRole;
+  }): Promise<{ user: User; message: string }> {
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create user');
+    return data;
+  },
+
+  async updateUser(userId: string, updateData: Partial<User>): Promise<User> {
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updateData),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update user');
+    return data.user;
+  },
+
   async updateUserRole(userId: string, role: string, roleType: AdminRole): Promise<User> {
     const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
       method: 'PUT',
@@ -421,6 +449,103 @@ export const api = {
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update user role');
     return data.user;
+  },
+
+  async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete user');
+    return data;
+  },
+
+  async deleteOrder(orderId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete order');
+    return data;
+  },
+
+  // E. MongoDB Direct Database Hub & Operations
+  async getDbCollections(): Promise<{ name: string; count: number; type: string }[]> {
+    const res = await fetch('/api/admin/db/collections');
+    if (!res.ok) throw new Error('Failed to fetch collections info');
+    const data = await res.json();
+    return data.collections || [];
+  },
+
+  async queryDbCollection(
+    collection: string,
+    options?: { filter?: any; limit?: number; skip?: number; sort?: any }
+  ): Promise<{
+    collection: string;
+    total: number;
+    count: number;
+    limit: number;
+    skip: number;
+    documents: any[];
+  }> {
+    const res = await fetch('/api/admin/db/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, ...options }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to query database collection');
+    return data;
+  },
+
+  async insertDbDocument(collection: string, document: any): Promise<{ success: boolean; document: any }> {
+    const res = await fetch('/api/admin/db/document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, document }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to insert document');
+    return data;
+  },
+
+  async updateDbDocument(collection: string, id: string, document: any): Promise<{ success: boolean; document: any }> {
+    const res = await fetch(`/api/admin/db/document/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, document }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update document');
+    return data;
+  },
+
+  async deleteDbDocument(collection: string, id: string): Promise<{ success: boolean; deletedCount: number }> {
+    const res = await fetch(`/api/admin/db/document/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete document');
+    return data;
+  },
+
+  async exportDatabaseDump(): Promise<{ exportedAt: string; database: string; collections: Record<string, any[]> }> {
+    const res = await fetch('/api/admin/db/export');
+    if (!res.ok) throw new Error('Failed to export database dump');
+    const data = await res.json();
+    return data.data;
+  },
+
+  async seedDatabaseCatalog(): Promise<{ success: boolean; count: number; message: string }> {
+    const res = await fetch('/api/admin/db/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to seed database');
+    return data;
   },
 
   // === Cloudinary Media & Upload API ===

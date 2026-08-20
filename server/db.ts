@@ -433,15 +433,40 @@ export async function updateProductAdmin(productId: string, updateData: Partial<
 
 export async function deleteProductAdmin(productId: string) {
   const { db, isConnected } = await getDatabase();
+  const idStr = String(productId);
+  const idNum = Number(productId);
 
   if (isConnected && db) {
-    const result = await db.collection<Product>('products').deleteOne({ id: productId });
-    return { success: result.deletedCount > 0 };
+    const coll = db.collection<Product>('products');
+    // Try matching string id, numeric id, or sku
+    const orClauses: any[] = [{ id: idStr }, { id: idNum }, { sku: idStr }];
+
+    // If valid ObjectId, match _id as ObjectId or string
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(idStr)) {
+        orClauses.push({ _id: new ObjectId(idStr) as any });
+      }
+    } catch (e) {}
+    orClauses.push({ _id: idStr as any });
+
+    const result = await coll.deleteOne({ $or: orClauses });
+
+    // Also remove from cart, wishlist, and in-memory cache
+    await db.collection('cart').deleteMany({ productId: idStr }).catch(() => {});
+    await db.collection('wishlist').deleteMany({ id: idStr }).catch(() => {});
+    inMemoryStore.products = inMemoryStore.products.filter((p) => String(p.id) !== idStr);
+    inMemoryStore.cart = inMemoryStore.cart.filter((c) => String(c.productId) !== idStr);
+    inMemoryStore.wishlist = inMemoryStore.wishlist.filter((w) => String(w.id) !== idStr);
+
+    return { success: true, deletedCount: result.deletedCount };
   }
 
   const initialLen = inMemoryStore.products.length;
-  inMemoryStore.products = inMemoryStore.products.filter((p) => p.id !== productId);
-  return { success: inMemoryStore.products.length < initialLen };
+  inMemoryStore.products = inMemoryStore.products.filter((p) => String(p.id) !== idStr);
+  inMemoryStore.cart = inMemoryStore.cart.filter((c) => String(c.productId) !== idStr);
+  inMemoryStore.wishlist = inMemoryStore.wishlist.filter((w) => String(w.id) !== idStr);
+  return { success: true, deletedCount: initialLen - inMemoryStore.products.length };
 }
 
 // === Cart & Wishlist ===
@@ -1154,6 +1179,293 @@ export async function updateUserRole(userId: string, newRole: string, newRoleTyp
     return inMemoryStore.users[idx];
   }
   return null;
+}
+
+export async function updateUserAdmin(userId: string, updateData: Partial<User>) {
+  const { db, isConnected } = await getDatabase();
+
+  if (isConnected && db) {
+    const { id, passwordHash, ...safeUpdate } = updateData as any;
+    await db.collection('users').updateOne(
+      { id: userId },
+      {
+        $set: {
+          ...safeUpdate,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    return await db.collection<User>('users').findOne({ id: userId });
+  }
+
+  const idx = inMemoryStore.users.findIndex((u) => u.id === userId);
+  if (idx !== -1) {
+    inMemoryStore.users[idx] = {
+      ...inMemoryStore.users[idx],
+      ...updateData,
+    };
+    return inMemoryStore.users[idx];
+  }
+  return null;
+}
+
+export async function deleteUserAdmin(userId: string): Promise<{ success: boolean; message: string }> {
+  const { db, isConnected } = await getDatabase();
+  const idStr = String(userId);
+
+  if (isConnected && db) {
+    const coll = db.collection<User>('users');
+    const orClauses: any[] = [{ id: idStr }, { email: idStr }];
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(idStr)) {
+        orClauses.push({ _id: new ObjectId(idStr) as any });
+      }
+    } catch (e) {}
+    orClauses.push({ _id: idStr as any });
+
+    const user = await coll.findOne({ $or: orClauses });
+    if (!user) throw new Error('User not found');
+    if (user.email === 'azetablessingb@gmail.com') {
+      throw new Error('Primary Store Owner account cannot be removed.');
+    }
+
+    await coll.deleteOne({ $or: orClauses });
+    inMemoryStore.users = inMemoryStore.users.filter((u) => u.id !== idStr && u.email !== idStr);
+    return { success: true, message: `User ${user.name} was removed.` };
+  }
+
+  const idx = inMemoryStore.users.findIndex((u) => u.id === idStr || u.email === idStr);
+  if (idx === -1) throw new Error('User not found');
+  if (inMemoryStore.users[idx].email === 'azetablessingb@gmail.com') {
+    throw new Error('Primary Store Owner account cannot be removed.');
+  }
+
+  const removed = inMemoryStore.users.splice(idx, 1);
+  return { success: true, message: `User ${removed[0].name} was removed.` };
+}
+
+export async function deleteOrderAdmin(orderId: string): Promise<{ success: boolean; message: string }> {
+  const { db, isConnected } = await getDatabase();
+  const idStr = String(orderId);
+
+  if (isConnected && db) {
+    const coll = db.collection('orders');
+    const orClauses: any[] = [{ orderId: idStr }, { id: idStr }];
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(idStr)) {
+        orClauses.push({ _id: new ObjectId(idStr) as any });
+      }
+    } catch (e) {}
+    orClauses.push({ _id: idStr as any });
+
+    await coll.deleteOne({ $or: orClauses });
+    inMemoryStore.orders = inMemoryStore.orders.filter((o) => o.orderId !== idStr);
+    return { success: true, message: `Order #${idStr} deleted.` };
+  }
+
+  inMemoryStore.orders = inMemoryStore.orders.filter((o) => o.orderId !== idStr);
+  return { success: true, message: `Order #${idStr} deleted.` };
+}
+
+// === Direct MongoDB Collection Explorer & Query Hub ===
+
+export async function getDbCollectionsInfo() {
+  const { db, isConnected } = await getDatabase();
+
+  const standardCollections = ['products', 'orders', 'refunds', 'users', 'cart', 'wishlist', 'notifications'];
+
+  if (isConnected && db) {
+    const results = [];
+    for (const name of standardCollections) {
+      try {
+        const count = await db.collection(name).countDocuments();
+        results.push({
+          name,
+          count,
+          type: 'collection',
+        });
+      } catch {
+        results.push({ name, count: 0, type: 'collection' });
+      }
+    }
+    return results;
+  }
+
+  return standardCollections.map((name) => ({
+    name,
+    count: (inMemoryStore as any)[name]?.length || 0,
+    type: 'in-memory',
+  }));
+}
+
+export async function queryDbCollection(collectionName: string, options?: { filter?: any; limit?: number; skip?: number; sort?: any }) {
+  const { db, isConnected } = await getDatabase();
+  const limit = Math.min(options?.limit || 50, 100);
+  const skip = options?.skip || 0;
+  const filter = options?.filter || {};
+  const sort = options?.sort || { _id: -1, createdAt: -1 };
+
+  if (isConnected && db) {
+    try {
+      const coll = db.collection(collectionName);
+      const total = await coll.countDocuments(filter);
+      const docs = await coll.find(filter).sort(sort).skip(skip).limit(limit).toArray();
+      return {
+        collection: collectionName,
+        total,
+        count: docs.length,
+        limit,
+        skip,
+        documents: docs,
+      };
+    } catch (err: any) {
+      throw new Error(`MongoDB Query error on "${collectionName}": ${err?.message || err}`);
+    }
+  }
+
+  // In-memory fallback querying
+  const storeData = (inMemoryStore as any)[collectionName] || [];
+  let filtered = [...storeData];
+
+  // Basic in-memory filter support
+  if (filter && Object.keys(filter).length > 0) {
+    filtered = filtered.filter((doc) => {
+      return Object.entries(filter).every(([k, v]) => {
+        if (typeof v === 'string') {
+          return String((doc as any)[k]).toLowerCase().includes(v.toLowerCase());
+        }
+        return (doc as any)[k] === v;
+      });
+    });
+  }
+
+  const docs = filtered.slice(skip, skip + limit);
+  return {
+    collection: collectionName,
+    total: filtered.length,
+    count: docs.length,
+    limit,
+    skip,
+    documents: docs,
+  };
+}
+
+export async function insertDbDocument(collectionName: string, document: any) {
+  const { db, isConnected } = await getDatabase();
+
+  const docWithMeta = {
+    ...document,
+    id: document.id || `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    createdAt: document.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (isConnected && db) {
+    const res = await db.collection(collectionName).insertOne(docWithMeta);
+    return { success: true, document: docWithMeta, insertedId: res.insertedId };
+  }
+
+  if (!(inMemoryStore as any)[collectionName]) {
+    (inMemoryStore as any)[collectionName] = [];
+  }
+  (inMemoryStore as any)[collectionName].unshift(docWithMeta);
+  return { success: true, document: docWithMeta };
+}
+
+export async function updateDbDocument(collectionName: string, documentId: string, updateData: any) {
+  const { db, isConnected } = await getDatabase();
+
+  if (isConnected && db) {
+    const { _id, ...safeUpdate } = updateData;
+    await db.collection(collectionName).updateOne(
+      { $or: [{ id: documentId }, { orderId: documentId }] },
+      { $set: { ...safeUpdate, updatedAt: new Date().toISOString() } }
+    );
+    const updated = await db.collection(collectionName).findOne({ $or: [{ id: documentId }, { orderId: documentId }] });
+    return { success: true, document: updated };
+  }
+
+  const store = (inMemoryStore as any)[collectionName];
+  if (Array.isArray(store)) {
+    const idx = store.findIndex((d: any) => d.id === documentId || d.orderId === documentId);
+    if (idx !== -1) {
+      store[idx] = { ...store[idx], ...updateData, updatedAt: new Date().toISOString() };
+      return { success: true, document: store[idx] };
+    }
+  }
+
+  throw new Error(`Document with ID "${documentId}" not found in collection "${collectionName}".`);
+}
+
+export async function deleteDbDocument(collectionName: string, documentId: string) {
+  const { db, isConnected } = await getDatabase();
+  const idStr = String(documentId);
+
+  if (isConnected && db) {
+    const orClauses: any[] = [{ id: idStr }, { orderId: idStr }, { _id: idStr as any }];
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(idStr)) {
+        orClauses.push({ _id: new ObjectId(idStr) as any });
+      }
+    } catch (e) {}
+
+    const res = await db.collection(collectionName).deleteOne({ $or: orClauses });
+    return { success: true, deletedCount: res.deletedCount };
+  }
+
+  const store = (inMemoryStore as any)[collectionName];
+  if (Array.isArray(store)) {
+    const prevLen = store.length;
+    (inMemoryStore as any)[collectionName] = store.filter((d: any) => d.id !== idStr && d.orderId !== idStr && d._id !== idStr);
+    return { success: true, deletedCount: prevLen - (inMemoryStore as any)[collectionName].length };
+  }
+
+  return { success: true, deletedCount: 0 };
+}
+
+export async function exportDatabaseData() {
+  const { db, isConnected } = await getDatabase();
+  const collections = ['products', 'orders', 'refunds', 'users', 'notifications'];
+
+  const dump: Record<string, any[]> = {};
+
+  if (isConnected && db) {
+    for (const name of collections) {
+      dump[name] = await db.collection(name).find({}).toArray();
+    }
+  } else {
+    for (const name of collections) {
+      dump[name] = (inMemoryStore as any)[name] || [];
+    }
+  }
+
+  return {
+    exportedAt: new Date().toISOString(),
+    database: process.env.MONGODB_DB_NAME || 'blazestore',
+    collections: dump,
+  };
+}
+
+export async function seedCatalogToDatabase(): Promise<{ success: boolean; count: number; message: string }> {
+  const { db, isConnected } = await getDatabase();
+  const catalog = enrichedProducts;
+
+  if (isConnected && db) {
+    for (const p of catalog) {
+      await db.collection('products').updateOne(
+        { id: p.id },
+        { $set: { ...p, updatedAt: new Date().toISOString() } },
+        { upsert: true }
+      );
+    }
+    return { success: true, count: catalog.length, message: `Synced ${catalog.length} products to MongoDB.` };
+  }
+
+  inMemoryStore.products = [...catalog];
+  return { success: true, count: catalog.length, message: `Synced ${catalog.length} products to in-memory store.` };
 }
 
 // === Notifications ===

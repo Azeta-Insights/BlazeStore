@@ -17,10 +17,12 @@ import {
   ShieldCheck,
   RefreshCw,
   X,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 import { Order, RefundRecord, OrderStatus, AdminRole } from '../../types';
 import { api } from '../../services/api';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 interface AdminOrdersRefundsProps {
   adminRole: AdminRole;
@@ -44,6 +46,10 @@ export const AdminOrdersRefunds: React.FC<AdminOrdersRefundsProps> = ({
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isApprovingId, setIsApprovingId] = useState<string | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [isDeletingOrder, setIsDeletingOrder] = useState(false);
+  const [refundToReject, setRefundToReject] = useState<string | null>(null);
+  const [isRejectingRefund, setIsRejectingRefund] = useState(false);
 
   // Refund Modal State
   const [selectedOrderForRefund, setSelectedOrderForRefund] = useState<Order | null>(null);
@@ -95,23 +101,45 @@ export const AdminOrdersRefunds: React.FC<AdminOrdersRefundsProps> = ({
     }
   };
 
-  const handleRejectRefund = async (refundId: string) => {
+  const handleRejectRefund = (refundId: string) => {
     if (adminRole !== 'owner') {
       onShowToast('❌ Only Store Owners can reject queued refunds.');
       return;
     }
-    if (!window.confirm('Are you sure you want to reject this refund request?')) return;
-    setIsApprovingId(refundId);
+    setRefundToReject(refundId);
+  };
+
+  const handleConfirmRejectRefund = async () => {
+    if (!refundToReject) return;
+    setIsRejectingRefund(true);
     try {
-      const res = await api.rejectRefund(refundId, adminName, adminRole);
+      const res = await api.rejectRefund(refundToReject, adminName, adminRole);
       onShowToast(`ℹ️ ${res.message}`);
+      setRefundToReject(null);
       await loadData();
       if (onDataChanged) onDataChanged();
     } catch (e: any) {
       console.error(e);
-      onShowToast(`❌ Rejection failed: ${e?.message}`);
+      onShowToast(`❌ Rejection failed: ${e?.message || 'Server error'}`);
     } finally {
-      setIsApprovingId(null);
+      setIsRejectingRefund(false);
+    }
+  };
+
+  const handleConfirmDeleteOrder = async () => {
+    if (!orderToDelete) return;
+    setIsDeletingOrder(true);
+    try {
+      await api.deleteOrder(orderToDelete.orderId);
+      onShowToast(`🗑️ Order #${orderToDelete.orderId} deleted from MongoDB.`);
+      setOrderToDelete(null);
+      await loadData();
+      if (onDataChanged) onDataChanged();
+    } catch (e: any) {
+      console.error(e);
+      onShowToast(`❌ Failed to delete order: ${e?.message || 'Server error'}`);
+    } finally {
+      setIsDeletingOrder(false);
     }
   };
 
@@ -404,25 +432,39 @@ export const AdminOrdersRefunds: React.FC<AdminOrdersRefundsProps> = ({
                             </select>
                           </td>
 
-                          {/* Refund Action */}
+                          {/* Refund & Owner Delete Action */}
                           <td className="py-3.5 px-4 text-right">
-                            {ord.status === 'refunded' ? (
-                              <span className="text-[10px] font-bold text-[#8A8A94] bg-[#EDEDF2] dark:bg-[#27272A] px-2.5 py-1 rounded-lg">
-                                Fully Refunded
-                              </span>
-                            ) : remainingRefund <= 0 ? (
-                              <span className="text-[10px] font-bold text-[#8A8A94]">Refunded</span>
-                            ) : (
-                              <button
-                                id={`refund-order-${ord.orderId}`}
-                                onClick={() => openRefundModal(ord)}
-                                className="inline-flex items-center gap-1 rounded-xl bg-[#FB7185]/15 px-3 py-1.5 text-xs font-bold text-[#E11D48] hover:bg-[#FB7185] hover:text-white transition"
-                                title="Process partial or full refund"
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                                <span>Refund</span>
-                              </button>
-                            )}
+                            <div className="flex items-center justify-end gap-1.5">
+                              {ord.status === 'refunded' ? (
+                                <span className="text-[10px] font-bold text-[#8A8A94] bg-[#EDEDF2] dark:bg-[#27272A] px-2.5 py-1 rounded-lg">
+                                  Fully Refunded
+                                </span>
+                              ) : remainingRefund <= 0 ? (
+                                <span className="text-[10px] font-bold text-[#8A8A94]">Refunded</span>
+                              ) : (
+                                <button
+                                  id={`refund-order-${ord.orderId}`}
+                                  onClick={() => openRefundModal(ord)}
+                                  className="inline-flex items-center gap-1 rounded-xl bg-[#FB7185]/15 px-3 py-1.5 text-xs font-bold text-[#E11D48] hover:bg-[#FB7185] hover:text-white transition"
+                                  title="Process partial or full refund"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                  <span>Refund</span>
+                                </button>
+                              )}
+
+                              {/* Owner Delete Order Button */}
+                              {adminRole === 'owner' && (
+                                <button
+                                  id={`delete-order-${ord.orderId}`}
+                                  onClick={() => setOrderToDelete(ord)}
+                                  className="p-1.5 rounded-xl text-[#8A8A94] hover:text-red-600 hover:bg-red-500/10 transition"
+                                  title="Delete order record permanently"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -841,6 +883,33 @@ export const AdminOrdersRefunds: React.FC<AdminOrdersRefundsProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete Order Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(orderToDelete)}
+        onClose={() => setOrderToDelete(null)}
+        onConfirm={handleConfirmDeleteOrder}
+        title="Delete Order Record"
+        message="This action will permanently delete this order record and associated line items from the database."
+        itemName={orderToDelete ? `Order #${orderToDelete.orderId} - $${orderToDelete.total.toFixed(2)} (${orderToDelete.customerName})` : undefined}
+        confirmText="Delete Order"
+        isLoading={isDeletingOrder}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* Reject Refund Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(refundToReject)}
+        onClose={() => setRefundToReject(null)}
+        onConfirm={handleConfirmRejectRefund}
+        title="Reject Refund Request"
+        message="Are you sure you want to reject this queued refund request? The manager and customer will be notified."
+        itemName={refundToReject ? `Refund Request ${refundToReject}` : undefined}
+        confirmText="Reject Refund"
+        isDanger={false}
+        isLoading={isRejectingRefund}
+        isDarkMode={isDarkMode}
+      />
     </div>
   );
 };

@@ -13,10 +13,12 @@ import {
   Key,
   CheckCircle2,
   Crown,
+  Trash2,
   X
 } from 'lucide-react';
 import { User, AdminRole } from '../../types';
 import { api } from '../../services/api';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 interface AdminUsersRolesProps {
   adminRole: AdminRole;
@@ -34,6 +36,8 @@ export const AdminUsersRoles: React.FC<AdminUsersRolesProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddStaffModalOpen, setIsAddStaffModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   const [staffForm, setStaffForm] = useState({
     name: '',
@@ -77,6 +81,29 @@ export const AdminUsersRoles: React.FC<AdminUsersRolesProps> = ({
     } catch (e: any) {
       console.error(e);
       onShowToast(`❌ Role update failed: ${e?.message}`);
+    }
+  };
+
+  const handleDeleteUser = (userId: string, userName: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (target) {
+      setUserToDelete(target);
+    }
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
+    try {
+      await api.deleteUser(userToDelete.id);
+      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+      onShowToast(`🗑️ User ${userToDelete.name} deleted successfully`);
+      setUserToDelete(null);
+    } catch (e: any) {
+      console.error(e);
+      onShowToast(`❌ Failed to delete user: ${e?.message || 'Server error'}`);
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -270,6 +297,7 @@ export const AdminUsersRoles: React.FC<AdminUsersRolesProps> = ({
                 <th className="py-3 px-4 text-center">Current Role</th>
                 <th className="py-3 px-4 text-center">Change Permission Role</th>
                 <th className="py-3 px-4 text-right">Registration Date</th>
+                {adminRole === 'owner' && <th className="py-3 px-4 text-center">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EDEDF2] dark:divide-[#27272A]">
@@ -342,12 +370,24 @@ export const AdminUsersRoles: React.FC<AdminUsersRolesProps> = ({
                             })
                           : 'Recent'}
                       </td>
+
+                      {adminRole === 'owner' && (
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            onClick={() => handleDeleteUser(u.id, u.name)}
+                            className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition"
+                            title="Delete User from MongoDB"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-[#8A8A94]">
+                  <td colSpan={adminRole === 'owner' ? 6 : 5} className="py-12 text-center text-[#8A8A94]">
                     No users found matching your search.
                   </td>
                 </tr>
@@ -465,6 +505,19 @@ export const AdminUsersRoles: React.FC<AdminUsersRolesProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete User Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(userToDelete)}
+        onClose={() => setUserToDelete(null)}
+        onConfirm={handleConfirmDeleteUser}
+        title="Delete User Account"
+        message="Are you sure you want to permanently remove this user account from the database?"
+        itemName={userToDelete ? `${userToDelete.name} (${userToDelete.email}) - ${userToDelete.role}` : undefined}
+        confirmText="Delete User"
+        isLoading={isDeletingUser}
+        isDarkMode={isDarkMode}
+      />
     </div>
   );
 };

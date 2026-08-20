@@ -19,6 +19,7 @@ import {
 import { Product, AdminRole } from '../../types';
 import { api } from '../../services/api';
 import { ImageUploader } from '../ImageUploader';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 interface AdminInventoryProps {
   adminRole: AdminRole;
@@ -41,6 +42,8 @@ export const AdminInventory: React.FC<AdminInventoryProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Add/Edit Form State
   const [formData, setFormData] = useState({
@@ -210,18 +213,27 @@ export const AdminInventory: React.FC<AdminInventoryProps> = ({
     }
   };
 
-  const handleDeleteProduct = async (p: Product) => {
-    if (!confirm(`Are you sure you want to permanently delete "${p.name}" from the store catalog?`)) {
-      return;
-    }
+  const handleDeleteProduct = (p: Product) => {
+    setProductToDelete(p);
+  };
 
+  const handleConfirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setIsDeleting(true);
     try {
-      await api.deleteProduct(p.id);
-      onShowToast(`🗑️ "${p.name}" removed from MongoDB.`);
-      loadInventory();
+      await api.deleteProduct(productToDelete.id);
+      onShowToast(`🗑️ "${productToDelete.name}" removed from MongoDB.`);
+      setProductToDelete(null);
+      if (editingProduct?.id === productToDelete.id) {
+        setIsAddModalOpen(false);
+        setEditingProduct(null);
+      }
+      await loadInventory();
     } catch (e: any) {
       console.error(e);
-      onShowToast(`❌ Delete failed: ${e?.message}`);
+      onShowToast(`❌ Delete failed: ${e?.message || 'Server error'}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -706,26 +718,54 @@ export const AdminInventory: React.FC<AdminInventoryProps> = ({
                 </label>
               </div>
 
-              <div className="pt-3 border-t border-[#EDEDF2] dark:border-[#27272A] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#8A8A94] hover:bg-[#FAF9FC] dark:hover:bg-[#27272A]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#7C6FE0] px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#6D60D6] disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Saving to MongoDB...' : editingProduct ? 'Save Changes' : 'Create Product'}
-                </button>
+              <div className="pt-3 border-t border-[#EDEDF2] dark:border-[#27272A] flex items-center justify-between gap-2">
+                <div>
+                  {editingProduct && adminRole === 'owner' && (
+                    <button
+                      type="button"
+                      onClick={() => setProductToDelete(editingProduct)}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-red-500 hover:bg-red-500/10 transition"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Delete Product</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#8A8A94] hover:bg-[#FAF9FC] dark:hover:bg-[#27272A]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-1.5 rounded-xl bg-[#7C6FE0] px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#6D60D6] disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Saving to MongoDB...' : editingProduct ? 'Save Changes' : 'Create Product'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* In-app Confirmation Modal for Deleting Products */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(productToDelete)}
+        onClose={() => setProductToDelete(null)}
+        onConfirm={handleConfirmDeleteProduct}
+        title="Delete Product from Catalog"
+        message="This action will permanently delete the item from the catalog, inventory tracking, and warehouse database."
+        itemName={productToDelete ? `${productToDelete.name} (${productToDelete.sku || productToDelete.id})` : undefined}
+        confirmText="Delete Product"
+        isLoading={isDeleting}
+        isDarkMode={isDarkMode}
+      />
     </div>
   );
 };

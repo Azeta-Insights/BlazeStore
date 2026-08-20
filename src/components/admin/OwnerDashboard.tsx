@@ -34,6 +34,7 @@ import { AdminInventory } from './AdminInventory';
 import { AdminOrdersRefunds } from './AdminOrdersRefunds';
 import { AdminUsersRoles } from './AdminUsersRoles';
 import { AdminDatabaseHub } from './AdminDatabaseHub';
+import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 
 interface OwnerDashboardProps {
   currentUser: User | null;
@@ -68,6 +69,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   } | null>(null);
   const [isLoadingCloudinary, setIsLoadingCloudinary] = useState(true);
   const [isClearingData, setIsClearingData] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -88,14 +90,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     }
   };
 
-  const handleClearMockData = async () => {
-    if (!window.confirm('Clear all mock orders, refunds, test carts, and sample records from MongoDB & memory? Authentic admin accounts will be preserved.')) {
-      return;
-    }
+  const handleClearMockData = () => {
+    setShowClearConfirm(true);
+  };
+
+  const handleConfirmClearMockData = async () => {
     setIsClearingData(true);
     try {
       await api.clearMockData();
       showToast('🧹 All mock dashboard data and test orders cleared!');
+      setShowClearConfirm(false);
       await loadAnalytics();
     } catch (e: any) {
       console.error(e);
@@ -446,6 +450,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Clear Mock Data Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={handleConfirmClearMockData}
+        title="Clear All Mock Data"
+        message="This will reset and wipe sample test orders, customer refunds, temporary test cart items, and sample users. Authentic admin accounts and product catalog will be preserved."
+        confirmText="Clear Mock Data"
+        isLoading={isClearingData}
+        isDarkMode={isDarkMode}
+      />
     </div>
   );
 };
