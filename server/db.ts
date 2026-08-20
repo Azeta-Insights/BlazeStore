@@ -281,8 +281,28 @@ async function seedDatabaseIfEmpty(database: Db) {
 
     if (count === 0) {
       console.log('[MongoDB] Initializing database with catalog products...');
-      await productsColl.insertMany(enrichedProducts);
-      console.log('[MongoDB] Product catalog initialized successfully.');
+      const cleanCatalog = enrichedProducts.map((p, idx) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        price: p.price,
+        originalPrice: p.originalPrice,
+        costPrice: p.costPrice ?? Number((p.price * 0.55).toFixed(2)),
+        discountPercentage: p.discountPercentage || 0,
+        rating: p.rating || 4.8,
+        reviewCount: p.reviewCount || 12,
+        image: p.image,
+        badge: p.badge || 'Popular',
+        isHot: Boolean(p.isHot),
+        description: p.description,
+        inStock: p.inStock !== false,
+        stockQuantity: p.stockQuantity ?? 30,
+        sku: p.sku || `BLZ-${p.category.slice(0, 3).toUpperCase()}-${1000 + idx}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      await productsColl.insertMany(cleanCatalog);
+      console.log('[MongoDB] Product catalog initialized successfully with', cleanCatalog.length, 'products.');
     }
   } catch (e) {
     console.error('[MongoDB] Seeding error (non-fatal):', e);
@@ -292,21 +312,32 @@ async function seedDatabaseIfEmpty(database: Db) {
 // === Product & Inventory Management ===
 
 export async function getProducts(category?: string, search?: string) {
-  const { db, isConnected } = await getDatabase();
+  try {
+    const { db, isConnected } = await getDatabase();
 
-  if (isConnected && db) {
-    const query: any = {};
-    if (category && category !== 'all') {
-      query.category = { $regex: category, $options: 'i' };
+    if (isConnected && db) {
+      const query: any = {};
+      if (category && category !== 'all') {
+        query.category = { $regex: category, $options: 'i' };
+      }
+      if (search && search.trim()) {
+        query.$or = [
+          { name: { $regex: search.trim(), $options: 'i' } },
+          { category: { $regex: search.trim(), $options: 'i' } },
+          { description: { $regex: search.trim(), $options: 'i' } },
+        ];
+      }
+      let docs = await db.collection<Product>('products').find(query).toArray();
+      if (docs.length === 0 && !search && (!category || category === 'all')) {
+        await seedDatabaseIfEmpty(db);
+        docs = await db.collection<Product>('products').find(query).toArray();
+      }
+      if (docs.length > 0) {
+        return docs.map(({ _id, ...rest }: any) => rest);
+      }
     }
-    if (search && search.trim()) {
-      query.$or = [
-        { name: { $regex: search.trim(), $options: 'i' } },
-        { category: { $regex: search.trim(), $options: 'i' } },
-        { description: { $regex: search.trim(), $options: 'i' } },
-      ];
-    }
-    return await db.collection<Product>('products').find(query).toArray();
+  } catch (err) {
+    console.warn('[getProducts DB fallback]:', err);
   }
 
   // Fallback
@@ -318,21 +349,32 @@ export async function getProducts(category?: string, search?: string) {
 }
 
 export async function getAllProductsAdmin(category?: string, search?: string) {
-  const { db, isConnected } = await getDatabase();
+  try {
+    const { db, isConnected } = await getDatabase();
 
-  if (isConnected && db) {
-    const query: any = {};
-    if (category && category !== 'all') {
-      query.category = { $regex: category, $options: 'i' };
+    if (isConnected && db) {
+      const query: any = {};
+      if (category && category !== 'all') {
+        query.category = { $regex: category, $options: 'i' };
+      }
+      if (search && search.trim()) {
+        query.$or = [
+          { name: { $regex: search.trim(), $options: 'i' } },
+          { sku: { $regex: search.trim(), $options: 'i' } },
+          { category: { $regex: search.trim(), $options: 'i' } },
+        ];
+      }
+      let docs = await db.collection<Product>('products').find(query).sort({ updatedAt: -1 }).toArray();
+      if (docs.length === 0 && !search && (!category || category === 'all')) {
+        await seedDatabaseIfEmpty(db);
+        docs = await db.collection<Product>('products').find(query).sort({ updatedAt: -1 }).toArray();
+      }
+      if (docs.length > 0) {
+        return docs.map(({ _id, ...rest }: any) => rest);
+      }
     }
-    if (search && search.trim()) {
-      query.$or = [
-        { name: { $regex: search.trim(), $options: 'i' } },
-        { sku: { $regex: search.trim(), $options: 'i' } },
-        { category: { $regex: search.trim(), $options: 'i' } },
-      ];
-    }
-    return await db.collection<Product>('products').find(query).sort({ updatedAt: -1 }).toArray();
+  } catch (err) {
+    console.warn('[getAllProductsAdmin DB fallback]:', err);
   }
 
   return inMemoryStore.products.filter((p) => {
