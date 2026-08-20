@@ -94,8 +94,8 @@ export async function getDatabase(): Promise<{ db: Db | null; isConnected: boole
     connectionError = null;
 
     client = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 2500,
+      connectTimeoutMS: 2500,
     });
 
     await client.connect();
@@ -1566,74 +1566,110 @@ export async function loginUser(credentials: {
   email: string;
   password?: string;
 }): Promise<{ user: User; message: string }> {
-  const { db, isConnected } = await getDatabase();
   const emailClean = (credentials.email || '').trim().toLowerCase();
   const providedPassword = (credentials.password || '').trim();
 
-  if (isConnected && db) {
-    const usersColl = db.collection<User & { passwordHash?: string }>('users');
-    let existingUser: (User & { passwordHash?: string; _id?: any }) | null = await usersColl.findOne({
-      email: { $regex: new RegExp(`^${emailClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-    });
+  try {
+    const { db, isConnected } = await getDatabase();
+    if (isConnected && db) {
+      const usersColl = db.collection<User & { passwordHash?: string }>('users');
+      let existingUser: (User & { passwordHash?: string; _id?: any }) | null = await usersColl.findOne({
+        email: { $regex: new RegExp(`^${emailClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      });
 
-    // If logging in as primary owner or manager and document not yet created in MongoDB
-    if (!existingUser && emailClean === 'azetablessingb@gmail.com') {
-      const ownerUser = {
-        id: 'admin-owner-azeta',
-        name: 'Azeta Blessing',
-        email: 'azetablessingb@gmail.com',
-        phone: '+1 (555) 345-6789',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-        role: 'Store Owner',
-        roleType: 'owner' as AdminRole,
-        passwordHash: 'Azeta',
-        createdAt: new Date().toISOString(),
-      };
-      await usersColl.insertOne(ownerUser);
-      existingUser = ownerUser;
-    } else if (!existingUser && emailClean === 'blessing.waydiva@gmail.com') {
-      const managerUser = {
-        id: 'admin-manager-waydiva',
-        name: 'Blessing Waydiva',
-        email: 'blessing.waydiva@gmail.com',
-        phone: '+1 (555) 987-6543',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
-        role: 'Store Manager',
-        roleType: 'manager' as AdminRole,
-        passwordHash: 'Waydiva',
-        createdAt: new Date().toISOString(),
-      };
-      await usersColl.insertOne(managerUser);
-      existingUser = managerUser;
+      // If logging in as primary owner or manager and document not yet created in MongoDB
+      if (!existingUser && emailClean === 'azetablessingb@gmail.com') {
+        const ownerUser = {
+          id: 'admin-owner-azeta',
+          name: 'Azeta Blessing',
+          email: 'azetablessingb@gmail.com',
+          phone: '+1 (555) 345-6789',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+          role: 'Store Owner',
+          roleType: 'owner' as AdminRole,
+          passwordHash: 'Azeta',
+          createdAt: new Date().toISOString(),
+        };
+        try {
+          await usersColl.insertOne(ownerUser);
+        } catch {}
+        existingUser = ownerUser;
+      } else if (!existingUser && emailClean === 'blessing.waydiva@gmail.com') {
+        const managerUser = {
+          id: 'admin-manager-waydiva',
+          name: 'Blessing Waydiva',
+          email: 'blessing.waydiva@gmail.com',
+          phone: '+1 (555) 987-6543',
+          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
+          role: 'Store Manager',
+          roleType: 'manager' as AdminRole,
+          passwordHash: 'Waydiva',
+          createdAt: new Date().toISOString(),
+        };
+        try {
+          await usersColl.insertOne(managerUser);
+        } catch {}
+        existingUser = managerUser;
+      }
+
+      if (existingUser) {
+        const isMatch =
+          !providedPassword ||
+          !existingUser.passwordHash ||
+          existingUser.passwordHash === providedPassword ||
+          existingUser.passwordHash.toLowerCase() === providedPassword.toLowerCase() ||
+          (emailClean === 'azetablessingb@gmail.com' &&
+            (providedPassword.toLowerCase() === 'azeta' || providedPassword === 'admin' || providedPassword === 'password')) ||
+          (emailClean === 'blessing.waydiva@gmail.com' &&
+            (providedPassword.toLowerCase() === 'waydiva' || providedPassword === 'manager' || providedPassword === 'password'));
+
+        if (!isMatch) {
+          throw new Error('Incorrect password. Please verify your credentials or sign up for an account.');
+        }
+
+        const { passwordHash, ...safeUser } = existingUser;
+        inMemoryStore.currentUser = safeUser;
+        return { user: safeUser, message: 'Signed in successfully!' };
+      }
     }
-
-    if (!existingUser) {
-      throw new Error(
-        `No account found with email "${emailClean}". Only registered users can log in. Please sign up or check your email.`
-      );
+  } catch (err: any) {
+    if (err.message && err.message.includes('Incorrect password')) {
+      throw err;
     }
-
-    const isMatch =
-      !providedPassword ||
-      !existingUser.passwordHash ||
-      existingUser.passwordHash === providedPassword ||
-      existingUser.passwordHash.toLowerCase() === providedPassword.toLowerCase() ||
-      (emailClean === 'azetablessingb@gmail.com' &&
-        (providedPassword.toLowerCase() === 'azeta' || providedPassword === 'admin' || providedPassword === 'password')) ||
-      (emailClean === 'blessing.waydiva@gmail.com' &&
-        (providedPassword.toLowerCase() === 'waydiva' || providedPassword === 'manager' || providedPassword === 'password'));
-
-    if (!isMatch) {
-      throw new Error('Incorrect password. Please verify your credentials or sign up for an account.');
-    }
-
-    const { passwordHash, ...safeUser } = existingUser;
-    inMemoryStore.currentUser = safeUser;
-    return { user: safeUser, message: 'Signed in successfully!' };
+    console.warn('[MongoDB Auth Fallback Triggered]:', err.message);
   }
 
   // Fallback in-memory
-  const existingUser = inMemoryStore.users.find((u) => u.email.toLowerCase() === emailClean);
+  let existingUser = inMemoryStore.users.find((u) => u.email.toLowerCase() === emailClean);
+
+  if (!existingUser && emailClean === 'azetablessingb@gmail.com') {
+    existingUser = {
+      id: 'admin-owner-azeta',
+      name: 'Azeta Blessing',
+      email: 'azetablessingb@gmail.com',
+      phone: '+1 (555) 345-6789',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+      role: 'Store Owner',
+      roleType: 'owner' as AdminRole,
+      passwordHash: 'Azeta',
+      createdAt: new Date().toISOString(),
+    };
+    inMemoryStore.users.unshift(existingUser);
+  } else if (!existingUser && emailClean === 'blessing.waydiva@gmail.com') {
+    existingUser = {
+      id: 'admin-manager-waydiva',
+      name: 'Blessing Waydiva',
+      email: 'blessing.waydiva@gmail.com',
+      phone: '+1 (555) 987-6543',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
+      role: 'Store Manager',
+      roleType: 'manager' as AdminRole,
+      passwordHash: 'Waydiva',
+      createdAt: new Date().toISOString(),
+    };
+    inMemoryStore.users.unshift(existingUser);
+  }
+
   if (!existingUser) {
     throw new Error(
       `No account found with email "${emailClean}". Only registered users can log in. Please sign up.`

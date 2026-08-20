@@ -596,16 +596,9 @@ export function createApp() {
     }
   });
 
-  // Mount API router strictly under /api so Vite and SPA static files are not intercepted
+  // Mount API router under both /api and root to handle Vercel URL path variations
   app.use('/api', apiRouter);
-
-  // Catch-all 404 handler for unmatched /api requests
-  app.use('/api', (req, res) => {
-    res.status(404).json({
-      success: false,
-      error: `API route not found: ${req.method} ${req.originalUrl || req.url}`,
-    });
-  });
+  app.use('/', apiRouter);
 
   // Global Error Handler for API routes
   app.use((err: any, req: any, res: any, next: any) => {
