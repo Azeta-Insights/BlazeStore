@@ -31,13 +31,32 @@ export interface DbStatus {
   serverTime?: string;
 }
 
+// Robust JSON fetch wrapper with clean error extraction for Vercel and standalone environments
+async function safeJsonFetch<T = any>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  let json: any;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(
+        res.status >= 500
+          ? `Server error (${res.status}): Please check database connection in Settings & Vercel environment.`
+          : `API returned unexpected response (${res.status}).`
+      );
+    }
+    throw new Error(`Invalid response format from server`);
+  }
+  return json;
+}
+
 export const api = {
   // === Database Status ===
   async getDbStatus(): Promise<DbStatus> {
     try {
-      const res = await fetch('/api/db/status');
-      if (!res.ok) throw new Error('Failed to fetch DB status');
-      return await res.json();
+      const data = await safeJsonFetch<DbStatus>('/api/db/status');
+      return data;
     } catch (e: any) {
       return {
         success: false,
@@ -213,13 +232,12 @@ export const api = {
     phone?: string;
     roleType?: AdminRole;
   }): Promise<{ user: User; message: string }> {
-    const res = await fetch('/api/auth/register', {
+    const data = await safeJsonFetch<{ success: boolean; user: User; message: string; error?: string }>('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData),
     });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
+    if (!data.success) {
       throw new Error(data.error || 'Registration failed');
     }
     return { user: data.user, message: data.message };
@@ -229,13 +247,12 @@ export const api = {
     email: string;
     password?: string;
   }): Promise<{ user: User; message: string }> {
-    const res = await fetch('/api/auth/login', {
+    const data = await safeJsonFetch<{ success: boolean; user: User; message: string; error?: string }>('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
     });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
+    if (!data.success) {
       throw new Error(data.error || 'Login failed');
     }
     return { user: data.user, message: data.message };
@@ -243,9 +260,7 @@ export const api = {
 
   async getMe(): Promise<User | null> {
     try {
-      const res = await fetch('/api/auth/me');
-      if (!res.ok) throw new Error('Failed to get current user');
-      const data = await res.json();
+      const data = await safeJsonFetch<{ success: boolean; user?: User }>('/api/auth/me');
       return data.user || null;
     } catch (e) {
       console.warn('Failed to load user:', e);

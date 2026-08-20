@@ -54,28 +54,41 @@ dotenv.config();
 export function createApp() {
   const app = express();
 
-  // Middlewares with high payload limit for direct image uploads
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
-  // Basic CORS support for serverless API
+  // Basic CORS headers for API requests
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     if (req.method === 'OPTIONS') {
       return res.status(200).end();
     }
     next();
   });
 
+  // Safe body parser for standalone Express & Vercel serverless environments
+  // (Prevents hanging when serverless runtime has already consumed the stream to parse req.body)
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === 'object') {
+      return next();
+    }
+    express.json({ limit: '50mb' })(req, res, next);
+  });
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === 'object') {
+      return next();
+    }
+    express.urlencoded({ limit: '50mb', extended: true })(req, res, next);
+  });
+
+  const apiRouter = express.Router();
+
   // Health check route
-  app.get('/api/health', (req, res) => {
+  apiRouter.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
   // === Cloudinary Image Upload API ===
-  app.get('/api/cloudinary/status', (req, res) => {
+  apiRouter.get('/cloudinary/status', (req, res) => {
     try {
       const status = getCloudinaryStatus();
       res.json({ success: true, ...status });
@@ -84,9 +97,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/upload', async (req, res) => {
+  apiRouter.post('/upload', async (req, res) => {
     try {
-      const { image, folder, tags } = req.body;
+      const { image, folder, tags } = req.body || {};
       if (!image) {
         return res.status(400).json({ success: false, error: 'Image data is required (file or base64).' });
       }
@@ -101,7 +114,7 @@ export function createApp() {
   // === MongoDB API Routes ===
 
   // 1. Health & Database Status
-  app.get('/api/db/status', async (req, res) => {
+  apiRouter.get('/db/status', async (req, res) => {
     try {
       const status = await getDatabaseStatus();
       res.json({
@@ -115,7 +128,7 @@ export function createApp() {
   });
 
   // 2. Products API (Storefront)
-  app.get('/api/products', async (req, res) => {
+  apiRouter.get('/products', async (req, res) => {
     try {
       const category = req.query.category as string | undefined;
       const search = req.query.search as string | undefined;
@@ -127,7 +140,7 @@ export function createApp() {
   });
 
   // 3. Cart API
-  app.get('/api/cart', async (req, res) => {
+  apiRouter.get('/cart', async (req, res) => {
     try {
       const cart = await getCart();
       res.json({ success: true, cart });
@@ -136,7 +149,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/cart', async (req, res) => {
+  apiRouter.post('/cart', async (req, res) => {
     try {
       const item = req.body;
       if (!item || !item.productId) {
@@ -149,10 +162,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/cart/:id', async (req, res) => {
+  apiRouter.put('/cart/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const { delta } = req.body;
+      const { delta } = req.body || {};
       const cart = await updateCartQuantity(id, Number(delta) || 1);
       res.json({ success: true, cart });
     } catch (err: any) {
@@ -160,7 +173,7 @@ export function createApp() {
     }
   });
 
-  app.delete('/api/cart/:id', async (req, res) => {
+  apiRouter.delete('/cart/:id', async (req, res) => {
     try {
       const { id } = req.params;
       const cart = await removeFromCart(id);
@@ -170,7 +183,7 @@ export function createApp() {
     }
   });
 
-  app.delete('/api/cart', async (req, res) => {
+  apiRouter.delete('/cart', async (req, res) => {
     try {
       const cart = await clearCart();
       res.json({ success: true, cart });
@@ -180,7 +193,7 @@ export function createApp() {
   });
 
   // 4. Wishlist API
-  app.get('/api/wishlist', async (req, res) => {
+  apiRouter.get('/wishlist', async (req, res) => {
     try {
       const wishlist = await getWishlist();
       res.json({ success: true, wishlist });
@@ -189,7 +202,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/wishlist/toggle', async (req, res) => {
+  apiRouter.post('/wishlist/toggle', async (req, res) => {
     try {
       const product = req.body;
       if (!product || !product.id) {
@@ -203,7 +216,7 @@ export function createApp() {
   });
 
   // 5. Orders API (Storefront customer placement)
-  app.post('/api/orders', async (req, res) => {
+  apiRouter.post('/orders', async (req, res) => {
     try {
       const orderData = req.body;
       const order = await createOrder(orderData);
@@ -214,7 +227,7 @@ export function createApp() {
   });
 
   // 6. Notifications API
-  app.get('/api/notifications', async (req, res) => {
+  apiRouter.get('/notifications', async (req, res) => {
     try {
       const notifications = await getNotifications();
       res.json({ success: true, notifications });
@@ -223,7 +236,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/notifications/read', async (req, res) => {
+  apiRouter.post('/notifications/read', async (req, res) => {
     try {
       const notifications = await markNotificationsRead();
       res.json({ success: true, notifications });
@@ -233,9 +246,9 @@ export function createApp() {
   });
 
   // 7. User Registration & Auth API
-  app.post('/api/auth/register', async (req, res) => {
+  apiRouter.post('/auth/register', async (req, res) => {
     try {
-      const { name, email, password, phone, roleType } = req.body;
+      const { name, email, password, phone, roleType } = req.body || {};
       if (!name || !email) {
         return res.status(400).json({ success: false, error: 'Name and email are required.' });
       }
@@ -246,9 +259,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/auth/login', async (req, res) => {
+  apiRouter.post('/auth/login', async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password } = req.body || {};
       if (!email) {
         return res.status(400).json({ success: false, error: 'Email is required.' });
       }
@@ -259,7 +272,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/auth/me', async (req, res) => {
+  apiRouter.get('/auth/me', async (req, res) => {
     try {
       const user = await getCurrentUser();
       res.json({ success: true, user });
@@ -268,7 +281,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/auth/logout', async (req, res) => {
+  apiRouter.post('/auth/logout', async (req, res) => {
     try {
       const result = await logoutUser();
       res.json(result);
@@ -280,7 +293,7 @@ export function createApp() {
   // === ADMIN DASHBOARD API ROUTES ===
 
   // A. Sales Analytics & Reports
-  app.get('/api/admin/analytics', async (req, res) => {
+  apiRouter.get('/admin/analytics', async (req, res) => {
     try {
       const analytics = await getSalesAnalytics();
       res.json({ success: true, analytics });
@@ -290,7 +303,7 @@ export function createApp() {
   });
 
   // B. Inventory Management API
-  app.get('/api/admin/products', async (req, res) => {
+  apiRouter.get('/admin/products', async (req, res) => {
     try {
       const category = req.query.category as string | undefined;
       const search = req.query.search as string | undefined;
@@ -301,9 +314,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/products', async (req, res) => {
+  apiRouter.post('/admin/products', async (req, res) => {
     try {
-      const productData = req.body;
+      const productData = req.body || {};
       if (!productData.name || !productData.price) {
         return res.status(400).json({ success: false, error: 'Product name and price are required.' });
       }
@@ -314,10 +327,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/admin/products/:id', async (req, res) => {
+  apiRouter.put('/admin/products/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const updateData = req.body;
+      const updateData = req.body || {};
       const updated = await updateProductAdmin(id, updateData);
       res.json({ success: true, product: updated, message: 'Product details updated.' });
     } catch (err: any) {
@@ -325,10 +338,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/admin/products/:id/stock', async (req, res) => {
+  apiRouter.put('/admin/products/:id/stock', async (req, res) => {
     try {
       const { id } = req.params;
-      const { stockQuantity, inStock } = req.body;
+      const { stockQuantity, inStock } = req.body || {};
       const updated = await updateProductStock(id, Number(stockQuantity), inStock);
       res.json({ success: true, product: updated, message: 'Stock quantity updated.' });
     } catch (err: any) {
@@ -336,7 +349,7 @@ export function createApp() {
     }
   });
 
-  app.delete('/api/admin/products/:id', async (req, res) => {
+  apiRouter.delete('/admin/products/:id', async (req, res) => {
     try {
       const { id } = req.params;
       const result = await deleteProductAdmin(id);
@@ -347,7 +360,7 @@ export function createApp() {
   });
 
   // C. Order Management & Process Refunds API
-  app.get('/api/admin/orders', async (req, res) => {
+  apiRouter.get('/admin/orders', async (req, res) => {
     try {
       const status = req.query.status as string | undefined;
       const search = req.query.search as string | undefined;
@@ -358,10 +371,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/admin/orders/:orderId/status', async (req, res) => {
+  apiRouter.put('/admin/orders/:orderId/status', async (req, res) => {
     try {
       const { orderId } = req.params;
-      const { status, adminName, adminRole } = req.body;
+      const { status, adminName, adminRole } = req.body || {};
       const updated = await updateOrderStatus(orderId, status, { name: adminName, role: adminRole });
       res.json({ success: true, order: updated, message: `Order status updated to ${status}.` });
     } catch (err: any) {
@@ -369,9 +382,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/refunds', async (req, res) => {
+  apiRouter.post('/admin/refunds', async (req, res) => {
     try {
-      const { orderId, amount, reason, restockItems, adminName, adminRole } = req.body;
+      const { orderId, amount, reason, restockItems, adminName, adminRole } = req.body || {};
       if (!orderId || !amount) {
         return res.status(400).json({ success: false, error: 'Order ID and refund amount are required.' });
       }
@@ -389,7 +402,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/admin/refunds', async (req, res) => {
+  apiRouter.get('/admin/refunds', async (req, res) => {
     try {
       const refunds = await getRefunds();
       res.json({ success: true, refunds });
@@ -398,10 +411,10 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/refunds/:id/approve', async (req, res) => {
+  apiRouter.post('/admin/refunds/:id/approve', async (req, res) => {
     try {
       const { id } = req.params;
-      const { ownerName, adminRole } = req.body;
+      const { ownerName, adminRole } = req.body || {};
       if (adminRole !== 'owner') {
         return res.status(403).json({ success: false, error: 'Only Store Owners can approve queued refunds.' });
       }
@@ -412,10 +425,10 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/refunds/:id/reject', async (req, res) => {
+  apiRouter.post('/admin/refunds/:id/reject', async (req, res) => {
     try {
       const { id } = req.params;
-      const { ownerName, adminRole } = req.body;
+      const { ownerName, adminRole } = req.body || {};
       if (adminRole !== 'owner') {
         return res.status(403).json({ success: false, error: 'Only Store Owners can reject queued refunds.' });
       }
@@ -427,7 +440,7 @@ export function createApp() {
   });
 
   // D. Users & Roles Management API
-  app.get('/api/admin/users', async (req, res) => {
+  apiRouter.get('/admin/users', async (req, res) => {
     try {
       const users = await getAllUsers();
       res.json({ success: true, users });
@@ -436,9 +449,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/users', async (req, res) => {
+  apiRouter.post('/admin/users', async (req, res) => {
     try {
-      const { name, email, password, phone, roleType } = req.body;
+      const { name, email, password, phone, roleType } = req.body || {};
       if (!name || !email) {
         return res.status(400).json({ success: false, error: 'Name and email are required.' });
       }
@@ -449,10 +462,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/admin/users/:id', async (req, res) => {
+  apiRouter.put('/admin/users/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const updateData = req.body;
+      const updateData = req.body || {};
       const updated = await updateUserAdmin(id, updateData);
       res.json({ success: true, user: updated, message: 'User updated.' });
     } catch (err: any) {
@@ -460,10 +473,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/admin/users/:id/role', async (req, res) => {
+  apiRouter.put('/admin/users/:id/role', async (req, res) => {
     try {
       const { id } = req.params;
-      const { role, roleType } = req.body;
+      const { role, roleType } = req.body || {};
       const updated = await updateUserRole(id, role, roleType);
       res.json({ success: true, user: updated, message: 'User role updated.' });
     } catch (err: any) {
@@ -471,7 +484,7 @@ export function createApp() {
     }
   });
 
-  app.delete('/api/admin/users/:id', async (req, res) => {
+  apiRouter.delete('/admin/users/:id', async (req, res) => {
     try {
       const { id } = req.params;
       const result = await deleteUserAdmin(id);
@@ -481,7 +494,7 @@ export function createApp() {
     }
   });
 
-  app.delete('/api/admin/orders/:orderId', async (req, res) => {
+  apiRouter.delete('/admin/orders/:orderId', async (req, res) => {
     try {
       const { orderId } = req.params;
       const result = await deleteOrderAdmin(orderId);
@@ -492,7 +505,7 @@ export function createApp() {
   });
 
   // E. Direct MongoDB Database Hub & Operations API
-  app.get('/api/admin/db/collections', async (req, res) => {
+  apiRouter.get('/admin/db/collections', async (req, res) => {
     try {
       const collections = await getDbCollectionsInfo();
       res.json({ success: true, collections });
@@ -501,9 +514,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/db/query', async (req, res) => {
+  apiRouter.post('/admin/db/query', async (req, res) => {
     try {
-      const { collection, filter, limit, skip, sort } = req.body;
+      const { collection, filter, limit, skip, sort } = req.body || {};
       if (!collection) {
         return res.status(400).json({ success: false, error: 'Collection name is required.' });
       }
@@ -514,9 +527,9 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/db/document', async (req, res) => {
+  apiRouter.post('/admin/db/document', async (req, res) => {
     try {
-      const { collection, document } = req.body;
+      const { collection, document } = req.body || {};
       if (!collection || !document) {
         return res.status(400).json({ success: false, error: 'Collection name and document data are required.' });
       }
@@ -527,10 +540,10 @@ export function createApp() {
     }
   });
 
-  app.put('/api/admin/db/document/:id', async (req, res) => {
+  apiRouter.put('/admin/db/document/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const { collection, document } = req.body;
+      const { collection, document } = req.body || {};
       if (!collection || !document) {
         return res.status(400).json({ success: false, error: 'Collection name and document data are required.' });
       }
@@ -541,10 +554,10 @@ export function createApp() {
     }
   });
 
-  app.delete('/api/admin/db/document/:id', async (req, res) => {
+  apiRouter.delete('/admin/db/document/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const { collection } = req.body;
+      const { collection } = req.body || {};
       if (!collection) {
         return res.status(400).json({ success: false, error: 'Collection name is required.' });
       }
@@ -555,7 +568,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/admin/db/export', async (req, res) => {
+  apiRouter.get('/admin/db/export', async (req, res) => {
     try {
       const data = await exportDatabaseData();
       res.json({ success: true, data });
@@ -564,7 +577,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/admin/db/seed', async (req, res) => {
+  apiRouter.post('/admin/db/seed', async (req, res) => {
     try {
       const result = await seedCatalogToDatabase();
       res.json(result);
@@ -574,13 +587,25 @@ export function createApp() {
   });
 
   // F. Clear All Mock / Test Data
-  app.post('/api/admin/clear-mock-data', async (req, res) => {
+  apiRouter.post('/admin/clear-mock-data', async (req, res) => {
     try {
       const result = await clearAllMockData();
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message || 'Failed to clear mock data' });
     }
+  });
+
+  // Mount API router strictly under /api so Vite and SPA static files are not intercepted
+  app.use('/api', apiRouter);
+
+  // Global Error Handler for API routes
+  app.use('/api', (err: any, req: any, res: any, next: any) => {
+    console.error('[API Server Error]:', err);
+    res.status(err.status || 500).json({
+      success: false,
+      error: err?.message || 'Internal Server Error',
+    });
   });
 
   return app;
