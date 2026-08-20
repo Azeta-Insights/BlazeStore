@@ -283,7 +283,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       required
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g. Alex Morgan"
+                      placeholder="Enter your full name"
                       className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#202024] py-2.5 pl-10 pr-4 text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC] placeholder:text-[#64748B] dark:placeholder:text-[#94A3B8] focus:border-[#7C6FE0] focus:outline-none focus:ring-2 focus:ring-[#7C6FE0]/20"
                     />
                   </div>

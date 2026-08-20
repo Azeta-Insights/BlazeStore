@@ -39,6 +39,8 @@ interface CartSidebarProps {
   isDarkMode: boolean;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const CartSidebar: React.FC<CartSidebarProps> = ({
@@ -59,6 +61,8 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
   isDarkMode,
   isOpenMobile = false,
   onCloseMobile,
+  isCollapsed = false,
+  onToggleCollapse,
 }) => {
   const [promoCode, setPromoCode] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<{ code: string; percent: number } | null>({
@@ -116,13 +120,32 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
 
       <aside
         id="cart-sidebar"
-        className={`fixed inset-y-0 right-0 z-50 flex w-[300px] flex-col border-l border-[#EDEDF2] transition-transform duration-300 ease-in-out xl:translate-x-0 ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-[300px] flex-col border-l border-[#EDEDF2] transition-transform duration-300 ease-in-out ${
           isDarkMode ? 'bg-[#18181B] text-[#EDEDF2] border-[#27272A]' : 'bg-white text-[#1F1F23]'
-        } ${isOpenMobile ? 'translate-x-0 shadow-2xl' : 'translate-x-full xl:translate-x-0'}`}
+        } ${
+          isOpenMobile
+            ? 'translate-x-0 shadow-2xl'
+            : isCollapsed
+            ? 'translate-x-full'
+            : 'translate-x-full xl:translate-x-0'
+        }`}
       >
         {/* Top Header Row: Wishlist, Notification Bell, User Avatar & Name */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#EDEDF2]/60">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[#EDEDF2]/60 dark:border-[#27272A]/60">
+          <div className="flex items-center gap-1.5">
+            {/* Desktop Collapse Button */}
+            {onToggleCollapse && (
+              <button
+                id="cart-desktop-collapse-btn"
+                onClick={onToggleCollapse}
+                className="hidden xl:flex p-1.5 rounded-lg text-[#8A8A94] hover:bg-[#F7F7FA] dark:hover:bg-[#27272A] hover:text-[#7C6FE0] transition"
+                title="Collapse cart panel"
+                aria-label="Collapse cart panel"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+
             {/* Wishlist Button */}
             <button
               id="header-wishlist-btn"

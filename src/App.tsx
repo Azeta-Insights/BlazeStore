@@ -78,9 +78,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
 
-  // Mobile Drawers state
+  // Mobile Drawers & Desktop Collapsible Panels state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState<boolean>(false);
+  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState<boolean>(false);
+  const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState<boolean>(false);
 
   // Modals state
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
@@ -532,6 +534,8 @@ export default function App() {
         wishlistCount={wishlist.length}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        isCollapsed={isLeftSidebarCollapsed}
+        onToggleCollapse={() => setIsLeftSidebarCollapsed((prev) => !prev)}
         onOpenPromo={() => {
           setSelectedCategory('all');
           setActiveTab('deals');
@@ -557,7 +561,11 @@ export default function App() {
       />
 
       {/* 2. CENTER MAIN CONTENT */}
-      <div className="flex flex-col lg:pl-[240px] xl:pr-[300px] min-h-screen transition-all duration-300">
+      <div className={`flex flex-col min-h-screen transition-all duration-300 ${
+        isLeftSidebarCollapsed ? 'lg:pl-[72px]' : 'lg:pl-[240px]'
+      } ${
+        isRightSidebarCollapsed ? 'xl:pr-0' : 'xl:pr-[300px]'
+      }`}>
         {/* Mobile Header Bar (< lg) */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#EDEDF2] dark:border-[#27272A] bg-white/95 dark:bg-[#18181B]/95 px-4 py-3 backdrop-blur-md lg:hidden">
           <div className="flex items-center gap-3">
@@ -737,25 +745,6 @@ export default function App() {
                   <span>Manager Hub</span>
                 </button>
               )}
-
-              {/* Logged-In User Profile Dropdown Pill (Alex / User) */}
-              <UserProfileMenu
-                currentUser={currentUser}
-                onOpenAuth={() => setIsAuthOpen(true)}
-                onLogout={handleLogout}
-                onNavigateTab={(tab) => {
-                  setActiveTab(tab);
-                  if (tab === 'wishlist') setIsWishlistOpen(true);
-                }}
-                onOpenWishlist={() => setIsWishlistOpen(true)}
-                onOpenAdmin={() => {
-                  if (isOwner) setCurrentPage('owner_dashboard');
-                  else if (isManager) setCurrentPage('manager_dashboard');
-                  else setIsAuthOpen(true);
-                }}
-                isDarkMode={isDarkMode}
-                align="right"
-              />
             </div>
           </div>
 
@@ -1024,6 +1013,19 @@ export default function App() {
         </main>
       </div>
 
+      {/* Floating Desktop Cart Expand Button (when right panel is collapsed) */}
+      {isRightSidebarCollapsed && (
+        <button
+          id="expand-cart-floating-btn"
+          onClick={() => setIsRightSidebarCollapsed(false)}
+          className="hidden xl:flex fixed top-20 right-6 z-40 items-center gap-2.5 rounded-full bg-[#7C6FE0] text-white px-4 py-2.5 font-bold text-xs shadow-xl shadow-[#7C6FE0]/30 hover:bg-[#6D60D6] transition-all transform hover:scale-105 active:scale-95"
+          title="Expand Cart Panel"
+        >
+          <ShoppingBag className="h-4 w-4" />
+          <span>Cart ({totalCartCount})</span>
+        </button>
+      )}
+
       {/* 3. RIGHT SIDEBAR (Cart, Profile, Quick Add, Promo, Club) */}
       <CartSidebar
         cart={cart}
@@ -1050,6 +1052,8 @@ export default function App() {
         isDarkMode={isDarkMode}
         isOpenMobile={isMobileCartOpen}
         onCloseMobile={() => setIsMobileCartOpen(false)}
+        isCollapsed={isRightSidebarCollapsed}
+        onToggleCollapse={() => setIsRightSidebarCollapsed((prev) => !prev)}
       />
 
       {/* Interactive Modals */}

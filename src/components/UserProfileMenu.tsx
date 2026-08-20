@@ -61,9 +61,9 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
     };
   }, [isOpen]);
 
-  const userName = currentUser?.name || 'Alex Morgan';
-  const displayName = currentUser ? currentUser.name.split(' ')[0] : 'Alex';
-  const userEmail = currentUser?.email || 'alex.morgan@example.com';
+  const userName = currentUser?.name || 'Guest';
+  const displayName = currentUser ? currentUser.name.split(' ')[0] : 'Guest';
+  const userEmail = currentUser?.email || 'Not signed in';
   const userRole = currentUser ? currentUser.role : 'Guest Visitor';
 
   return (
@@ -80,12 +80,12 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
               ? 'border-[#7C6FE0]/40 bg-[#7C6FE0]/10 text-[#7C6FE0]'
               : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
             : isDarkMode
-            ? 'border-[#27272A] bg-[#1E1E22] text-[#F8FAFC]'
-            : 'border-[#CBD5E1] bg-white text-[#0F172A]'
+            ? 'border-[#27272A] bg-[#1E1E22] text-[#94A3B8] hover:text-white'
+            : 'border-[#CBD5E1] bg-white text-[#64748B] hover:text-[#0F172A]'
         }`}
         aria-expanded={isOpen}
         aria-haspopup="true"
-        title="Account Profile & Settings"
+        title={currentUser ? `Account: ${userName}` : 'Guest Visitor (Click to Sign In)'}
       >
         <div className="relative">
           {currentUser?.avatar ? (
@@ -96,8 +96,10 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
               className="h-6 w-6 rounded-full object-cover ring-1 ring-white/50 dark:ring-black/50"
             />
           ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#7C6FE0] text-white text-[11px] font-extrabold">
-              {displayName.charAt(0)}
+            <div className={`flex h-6 w-6 items-center justify-center rounded-full ${
+              currentUser ? 'bg-[#7C6FE0] text-white text-[11px] font-extrabold' : 'bg-[#7C6FE0]/15 text-[#7C6FE0]'
+            }`}>
+              {currentUser ? displayName.charAt(0) : <UserIcon className="h-3.5 w-3.5" />}
             </div>
           )}
           <span
@@ -107,7 +109,9 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
           />
         </div>
 
-        <span className="max-w-[80px] sm:max-w-[100px] truncate">{displayName}</span>
+        <span className="max-w-[80px] sm:max-w-[100px] truncate">
+          {currentUser ? displayName : 'Guest'}
+        </span>
         <ChevronDown
           className={`h-3.5 w-3.5 text-[#64748B] transition-transform duration-200 ${
             isOpen ? 'rotate-180 text-[#7C6FE0]' : ''
