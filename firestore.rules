@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for Authentication and RBAC
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwner() {
+      return isAuthenticated() && (
+        getUserData().role == 'owner' ||
+        request.auth.token.email == 'azetablessingb@gmail.com'
+      );
+    }
+
+    function isManager() {
+      return isAuthenticated() && (
+        getUserData().role == 'manager' ||
+        request.auth.token.email == 'blessing.waydiva@gmail.com'
+      );
+    }
+
+    function isStaff() {
+      return isOwner() || isManager();
+    }
+
+    function isCustomer() {
+      return isAuthenticated() && getUserData().role == 'customer';
+    }
+
+    // Default deny for all collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Users collection
+    // - Owner: Full access to create, read, update, delete any user and assign roles
+    // - Authenticated User: Read and update own profile, but CANNOT elevate or change role
+    // - Manager: Read-only access to staff directory, cannot change roles or delete users
+    // - Customer: Read/update own record only
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isStaff() || request.auth.uid == userId);
+      allow create: if isOwner() || (
+        isAuthenticated() && 
+        request.auth.uid == userId && 
+        request.resource.data.role == 'customer'
+      );
+      allow update: if isOwner() || (
+        isAuthenticated() && 
+        request.auth.uid == userId && 
+        request.resource.data.role == resource.data.role
+      );
+      allow delete: if isOwner();
+    }
+
+    // 2. Products collection
+    // - Public: Read access for storefront
+    // - Owner & Manager: Full read and write (create, update, delete) for inventory operations
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff() || isOwner();
+    }
+
+    // 3. Orders collection
+    // - Owner: Full read, write, delete access
+    // - Manager: Full read and update status, process refunds up to $200
+    // - Customer: Read and create their own orders only
+    match /orders/{orderId} {
+      allow read: if isStaff() || (
+        isAuthenticated() && (
+          resource.data.userId == request.auth.uid || 
+          resource.data.customer.email == request.auth.token.email
+        )
+      );
+      allow create: if isStaff() || (
+        isAuthenticated() && (
+          request.resource.data.userId == request.auth.uid || 
+          request.resource.data.customer.email == request.auth.token.email
+        )
+      );
+      allow update: if isOwner() || (
+        isManager() && (
+          // Managers can change fulfillment status, or refunds under $200, or mark >$200 as pending approval
+          request.resource.data.refundAmount == resource.data.refundAmount ||
+          request.resource.data.refundAmount <= 200 ||
+          request.resource.data.refundStatus == 'pending_owner_approval'
+        )
+      );
+      allow delete: if isOwner();
+    }
+
+    // 4. Refunds collection
+    // - Owner: Full read/write, approve, reject, or delete
+    // - Manager: Read refunds, process <= $200 instantly (status: 'approved'), or create > $200 with status: 'pending_owner_approval'
+    // - Customer: Denied (no access to refund admin collection)
+    match /refunds/{refundId} {
+      allow read: if isStaff();
+      allow create: if isOwner() || (
+        isManager() && (
+          (request.resource.data.amount <= 200 && request.resource.data.status == 'approved') ||
+          (request.resource.data.amount > 200 && request.resource.data.status == 'pending_owner_approval')
+        )
+      );
+      allow update: if isOwner();
+      allow delete: if isOwner();
+    }
+
+    // 5. Revenue Reports & Analytics
+    // - Owner: Full read, write, and export access
+    // - Manager: Read-only aggregate stats in dashboard, cannot write or export raw datasets
+    // - Customer: Denied
+    match /revenue_reports/{reportId} {
+      allow read: if isStaff();
+      allow write: if isOwner();
+    }
+
+    // 6. User Carts & Wishlists (Customer private data)
+    match /carts/{userId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isOwner());
+    }
+
+    match /wishlists/{userId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isOwner());
+    }
+
+    // 7. Notifications
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && (isStaff() || resource.data.userId == request.auth.uid);
+      allow write: if isStaff();
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "BlazeStore",
+  "description": "Full-stack ecommerce platform featuring role-based landing pages and access control for Store Owner, Store Manager, and Customers, complete with real MongoDB persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
