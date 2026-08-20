@@ -24,7 +24,11 @@ In the Vercel project configuration dashboard (Settings > Environment Variables)
 | `CLOUDINARY_CLOUD_NAME` | Cloudinary CDN Cloud Name | `your_cloud_name` (Optional for CDN image hosting) |
 | `CLOUDINARY_API_KEY` | Cloudinary API Key | `123456789012345` (Optional) |
 | `CLOUDINARY_API_SECRET` | Cloudinary API Secret | `your_api_secret` (Optional) |
-| `GEMINI_API_KEY` | Google Gemini API Key | `AIzaSy...` (Optional) |
+| `GEMINI_API_KEY` | Google Gemini API Key | `your_gemini_api_key` (Optional) |
+| `VITE_FIREBASE_API_KEY` | Firebase Web API Key | `your_firebase_api_key` (Optional) |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase Auth Domain | `your_project.firebaseapp.com` (Optional) |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase Project ID | `your_project_id` (Optional) |
+
 
 ---
 

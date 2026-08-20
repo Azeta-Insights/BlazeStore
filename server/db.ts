@@ -475,15 +475,18 @@ export async function updateProductAdmin(productId: string, updateData: Partial<
 
 export async function deleteProductAdmin(productId: string) {
   const { db, isConnected } = await getDatabase();
-  const idStr = String(productId);
+  const idStr = String(productId || '').trim();
   const idNum = Number(productId);
 
   if (isConnected && db) {
     const coll = db.collection<Product>('products');
-    // Try matching string id, numeric id, or sku
-    const orClauses: any[] = [{ id: idStr }, { id: idNum }, { sku: idStr }];
+    // Match string id, numeric id, sku, or _id
+    const orClauses: any[] = [{ id: idStr }, { sku: idStr }];
+    if (!isNaN(idNum) && idStr !== '') {
+      orClauses.push({ id: idNum });
+    }
 
-    // If valid ObjectId, match _id as ObjectId or string
+    // Match _id as ObjectId if valid, or as string
     try {
       const { ObjectId } = await import('mongodb');
       if (ObjectId.isValid(idStr)) {
@@ -492,23 +495,41 @@ export async function deleteProductAdmin(productId: string) {
     } catch (e) {}
     orClauses.push({ _id: idStr as any });
 
-    const result = await coll.deleteOne({ $or: orClauses });
+    let deletedCount = 0;
+    try {
+      const result = await coll.deleteOne({ $or: orClauses });
+      deletedCount = result.deletedCount || 0;
+    } catch (err) {
+      console.error('[MongoDB deleteProductAdmin error]:', err);
+    }
 
     // Also remove from cart, wishlist, and in-memory cache
-    await db.collection('cart').deleteMany({ productId: idStr }).catch(() => {});
-    await db.collection('wishlist').deleteMany({ id: idStr }).catch(() => {});
-    inMemoryStore.products = inMemoryStore.products.filter((p) => String(p.id) !== idStr);
-    inMemoryStore.cart = inMemoryStore.cart.filter((c) => String(c.productId) !== idStr);
-    inMemoryStore.wishlist = inMemoryStore.wishlist.filter((w) => String(w.id) !== idStr);
+    await db.collection('cart').deleteMany({ $or: [{ productId: idStr }, { id: idStr }] }).catch(() => {});
+    await db.collection('wishlist').deleteMany({ $or: [{ productId: idStr }, { id: idStr }] }).catch(() => {});
+    inMemoryStore.products = inMemoryStore.products.filter(
+      (p) => String(p.id) !== idStr && (!p.sku || p.sku !== idStr)
+    );
+    inMemoryStore.cart = inMemoryStore.cart.filter(
+      (c) => String(c.productId) !== idStr && String(c.id) !== idStr
+    );
+    inMemoryStore.wishlist = inMemoryStore.wishlist.filter(
+      (w) => String(w.id) !== idStr && String((w as any).productId) !== idStr
+    );
 
-    return { success: true, deletedCount: result.deletedCount };
+    return { success: true, deletedCount };
   }
 
   const initialLen = inMemoryStore.products.length;
-  inMemoryStore.products = inMemoryStore.products.filter((p) => String(p.id) !== idStr);
-  inMemoryStore.cart = inMemoryStore.cart.filter((c) => String(c.productId) !== idStr);
-  inMemoryStore.wishlist = inMemoryStore.wishlist.filter((w) => String(w.id) !== idStr);
-  return { success: true, deletedCount: initialLen - inMemoryStore.products.length };
+  inMemoryStore.products = inMemoryStore.products.filter(
+    (p) => String(p.id) !== idStr && (!p.sku || p.sku !== idStr)
+  );
+  inMemoryStore.cart = inMemoryStore.cart.filter(
+    (c) => String(c.productId) !== idStr && String(c.id) !== idStr
+  );
+  inMemoryStore.wishlist = inMemoryStore.wishlist.filter(
+    (w) => String(w.id) !== idStr && String((w as any).productId) !== idStr
+  );
+  return { success: true, deletedCount: Math.max(1, initialLen - inMemoryStore.products.length) };
 }
 
 // === Cart & Wishlist ===

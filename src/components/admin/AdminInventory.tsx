@@ -219,12 +219,16 @@ export const AdminInventory: React.FC<AdminInventoryProps> = ({
 
   const handleConfirmDeleteProduct = async () => {
     if (!productToDelete) return;
+    const targetId = productToDelete.id;
+    const targetName = productToDelete.name;
     setIsDeleting(true);
+    // Optimistically update local inventory state
+    setProducts((prev) => prev.filter((p) => String(p.id) !== String(targetId)));
     try {
-      await api.deleteProduct(productToDelete.id);
-      onShowToast(`🗑️ "${productToDelete.name}" removed from MongoDB.`);
+      await api.deleteProduct(targetId);
+      onShowToast(`🗑️ "${targetName}" removed from catalog.`);
       setProductToDelete(null);
-      if (editingProduct?.id === productToDelete.id) {
+      if (editingProduct?.id === targetId) {
         setIsAddModalOpen(false);
         setEditingProduct(null);
       }
@@ -232,6 +236,7 @@ export const AdminInventory: React.FC<AdminInventoryProps> = ({
     } catch (e: any) {
       console.error(e);
       onShowToast(`❌ Delete failed: ${e?.message || 'Server error'}`);
+      await loadInventory();
     } finally {
       setIsDeleting(false);
     }
